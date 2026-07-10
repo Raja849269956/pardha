@@ -11,13 +11,13 @@ This guide helps you share the app with 1–3 friends so they can run it locally
 Share the GitHub repository URL for Pardha:
 
 ```
-https://github.com/YOUR_USERNAME/pardha
+https://github.com/Raja849269956/pardha
 ```
 
 They should clone it to their computer:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/pardha.git
+git clone https://github.com/Raja849269956/pardha.git
 cd pardha
 ```
 
