@@ -1,8 +1,14 @@
 # Pardha
 
-Advanced real-time AI interview copilot. Captures live meeting audio, transcribes interviewer questions, and surfaces personalized answer suggestions in a private overlay.
+Advanced real-time AI interview copilot. Captures live meeting audio, reads shared screens, and surfaces personalized answer suggestions in a private overlay.
 
 > This is a fork of Interview Copilot with advanced features under active development.
+
+## Advanced features
+
+- **Screen-aware answers** — When someone shares their screen in Teams/Meet/Zoom, Pardha captures it and uses the visual context to answer questions about slides, code, or diagrams.
+- **Streaming answers** — Suggestions appear word-by-word instead of waiting for the full response.
+- **Profile memory** — Resume extraction, key strengths, about me, and sample answers make responses sound like you.
 
 ## Architecture
 

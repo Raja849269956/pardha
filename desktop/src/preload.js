@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   moveOverlay: (dx, dy) => ipcRenderer.invoke('move-overlay', dx, dy),
   resizeOverlay: (width, height) => ipcRenderer.invoke('resize-overlay', width, height),
   getEnv: () => ipcRenderer.invoke('get-env'),
+  captureScreen: () => ipcRenderer.invoke('capture-screen'),
 });

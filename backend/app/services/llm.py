@@ -131,6 +131,62 @@ Suggested answer:"""
                         except (json.JSONDecodeError, IndexError, KeyError):
                             continue
 
+    async def generate_answer_stream_with_vision(self, profile: dict, question: str, image_base64: str):
+        if not self.api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set")
+
+        system_prompt, user_prompt = self._build_prompts(profile, question)
+        vision_system_prompt = system_prompt + "\nA screenshot from the meeting is also provided. Use the visual context to improve the answer when relevant."
+
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                "POST",
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": vision_system_prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": user_prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{image_base64}",
+                                        "detail": "low",
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 700,
+                    "stream": True,
+                },
+                timeout=45.0,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if line == "data: [DONE]":
+                        break
+                    if line.startswith("data: "):
+                        try:
+                            data = json.loads(line[6:])
+                            delta = data.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                        except (json.JSONDecodeError, IndexError, KeyError):
+                            continue
+
 
 class AnthropicLLM:
     def __init__(self):
@@ -213,3 +269,19 @@ async def generate_answer_stream(profile: dict, question: str):
             yield token
     else:
         raise ValueError("Streaming is currently only supported with OpenAI.")
+
+
+async def generate_answer_stream_with_vision(profile: dict, question: str, image_base64: str):
+    if settings.MOCK_LLM:
+        yield (
+            f"[MOCK + VISION] Tailored answer for {profile.get('role_title', 'role')} at "
+            f"{profile.get('target_company', 'company')} using screen context: concise response to '{question}'."
+        )
+        return
+    provider = settings.LLM_PROVIDER.lower()
+    if provider == "openai":
+        llm = OpenAILLM()
+        async for token in llm.generate_answer_stream_with_vision(profile, question, image_base64):
+            yield token
+    else:
+        raise ValueError("Vision streaming is currently only supported with OpenAI.")

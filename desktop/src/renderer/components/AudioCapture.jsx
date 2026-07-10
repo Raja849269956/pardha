@@ -16,6 +16,7 @@ function AudioCapture() {
   const [error, setError] = useState('');
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState('');
+  const [screenCaptureEnabled, setScreenCaptureEnabled] = useState(true);
 
   const audioContextRef = useRef(null);
   const processorRef = useRef(null);
@@ -94,6 +95,19 @@ function AudioCapture() {
           setTranscript(message.payload.text);
           if (message.payload.is_final) {
             localStorage.setItem('latestTranscript', JSON.stringify(message.payload));
+          }
+        } else if (message.type === 'question_detected') {
+          if (screenCaptureEnabled && window.electronAPI) {
+            window.electronAPI.captureScreen().then((result) => {
+              if (result.success && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'screen_context',
+                  payload: { image_base64: result.data },
+                }));
+              }
+            }).catch((err) => {
+              console.error('Screen capture failed:', err);
+            });
           }
         } else if (message.type === 'suggestion') {
           localStorage.setItem('latestSuggestion', JSON.stringify(message.payload));
@@ -191,6 +205,17 @@ function AudioCapture() {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="screen-capture-toggle">
+        <label>
+          <input
+            type="checkbox"
+            checked={screenCaptureEnabled}
+            onChange={(e) => setScreenCaptureEnabled(e.target.checked)}
+          />
+          Use shared screen as context for answers (macOS screen recording permission required)
+        </label>
       </div>
 
       <div className="status">Status: {status}</div>

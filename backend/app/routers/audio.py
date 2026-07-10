@@ -11,7 +11,7 @@ from app import models, auth as auth_utils
 from app.config import settings
 from app.services.asr import TranscriptionHandler, create_asr_stream
 from app.services.question_detector import QuestionDetector
-from app.services.llm import generate_answer, generate_answer_stream
+from app.services.llm import generate_answer, generate_answer_stream, generate_answer_stream_with_vision
 
 router = APIRouter(prefix="/api/v1/audio", tags=["audio"])
 logger = logging.getLogger(__name__)
@@ -76,11 +76,14 @@ async def audio_stream(websocket: WebSocket, session_id: str):
         detector = QuestionDetector(cooldown_seconds=2.0)
         current_question = None
         streaming_question = None
+        latest_screen_image = None
 
         async def stream_answer(question: str):
-            nonlocal streaming_question
+            nonlocal streaming_question, latest_screen_image
             streaming_question = question
             full_answer = ""
+            screen_image = latest_screen_image
+            latest_screen_image = None  # consume it for this question
 
             await websocket.send_text(json.dumps({
                 "type": "suggestion_start",
@@ -88,7 +91,12 @@ async def audio_stream(websocket: WebSocket, session_id: str):
             }))
 
             try:
-                async for token in generate_answer_stream(profile_dict, question):
+                answer_stream = (
+                    generate_answer_stream_with_vision(profile_dict, question, screen_image)
+                    if screen_image
+                    else generate_answer_stream(profile_dict, question)
+                )
+                async for token in answer_stream:
                     full_answer += token
                     await websocket.send_text(json.dumps({
                         "type": "suggestion_token",
@@ -162,24 +170,37 @@ async def audio_stream(websocket: WebSocket, session_id: str):
 
         asr_task = asyncio.create_task(create_asr_stream(audio_queue, handler))
 
+        async def handle_incoming(raw):
+            nonlocal latest_screen_image
+            if isinstance(raw, str):
+                try:
+                    data = json.loads(raw)
+                    msg_type = data.get("type")
+                    if msg_type == "mock_audio" and settings.MOCK_ASR:
+                        await audio_queue.put(data.get("payload", ""))
+                    elif msg_type == "screen_context":
+                        latest_screen_image = data.get("payload", {}).get("image_base64")
+                except json.JSONDecodeError:
+                    if settings.MOCK_ASR:
+                        await audio_queue.put(raw)
+            elif isinstance(raw, bytes):
+                await audio_queue.put(raw)
+
         try:
             while True:
-                if settings.MOCK_ASR:
-                    message = await websocket.receive_text()
-                    try:
-                        data = json.loads(message)
-                        if data.get("type") == "mock_audio":
-                            await audio_queue.put(data.get("payload", ""))
-                        else:
-                            await audio_queue.put(message)
-                    except json.JSONDecodeError:
-                        await audio_queue.put(message)
-                else:
-                    message = await websocket.receive_bytes()
-                    await audio_queue.put(message)
+                data = await websocket.receive()
+                msg_type = data.get("type")
+                if msg_type == "websocket.disconnect":
+                    break
+                if msg_type == "websocket.receive":
+                    if "text" in data:
+                        await handle_incoming(data["text"])
+                    elif "bytes" in data:
+                        await handle_incoming(data["bytes"])
         except WebSocketDisconnect:
-            await audio_queue.put(None)
+            pass
         finally:
+            await audio_queue.put(None)
             asr_task.cancel()
             try:
                 await asr_task

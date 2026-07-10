@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, desktopCapturer, nativeImage } = require('electron');
 const path = require('path');
 
 // Load .env from the app directory in packaged builds
@@ -113,6 +113,28 @@ ipcMain.handle('get-env', () => ({
   API_URL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
   WS_URL: process.env.REACT_APP_WS_URL || 'ws://localhost:8000',
 }));
+
+ipcMain.handle('capture-screen', async () => {
+  try {
+    const display = screen.getPrimaryDisplay();
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: display.size.width, height: display.size.height },
+    });
+
+    if (!sources || sources.length === 0) {
+      throw new Error('No screen source found');
+    }
+
+    const primarySource = sources.find((s) => s.display_id === String(display.id)) || sources[0];
+    const original = nativeImage.createFromDataURL(primarySource.thumbnail.toDataURL());
+    const resized = original.resize({ width: 1024, quality: 'good' });
+    const base64 = resized.toJPEG(75).toString('base64');
+    return { success: true, data: base64 };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 app.whenReady().then(() => {
   createMainWindow();
